@@ -16,9 +16,9 @@ MAX_YR = df.Year.max()
 MIN_YR = df.Year.min()
 START_YR = 2007
 
-# since data is as of year end, need to add start year
+# concat pd fixed
 df = (
-    df.append({"Year": MIN_YR - 1}, ignore_index=True)
+    pd.concat([df, pd.DataFrame([{"Year": MIN_YR - 1}])], ignore_index=True)
     .sort_values("Year", ignore_index=True)
     .fillna(0)
 )
@@ -516,7 +516,7 @@ def backtest(stocks, cash, start_bal, nper, start_yr):
             dff.loc[yr, "Bonds"] = dff.loc[yr, "Bonds"] * (
                 1 + dff.loc[yr, "10yr T.Bond"]
             )
-            dff.loc[yr, "Total"] = dff.loc[yr, ["Cash", "Bonds", "Stocks"]].sum()
+            dff.loc[yr, "Total"] = int(dff.loc[yr, ["Cash", "Bonds", "Stocks"]].sum())
 
     dff = dff.reset_index(drop=True)
     columns = ["Cash", "Stocks", "Bonds", "Total"]
@@ -656,7 +656,7 @@ def update_stock_slider(cash, initial_stock_value):
 def update_time_period(planning_time, start_yr, period_number):
     """syncs inputs and selected time periods"""
     ctx = callback_context
-    input_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    input_id = callback_context.triggered[0]["prop_id"].split(".")[0]
 
     if input_id == "time_period":
         planning_time = time_period_data[period_number]["planning_time"]
@@ -713,4 +713,4 @@ def update_totals(stocks, cash, start_bal, planning_time, start_yr):
 
 
 if __name__ == "__main__":
-    app.run_server(debug=True)
+    app.run(debug=True)
