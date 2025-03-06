@@ -6,7 +6,7 @@ import pandas as pd
 
 app = Dash(
     __name__,
-    external_stylesheets=[dbc.themes.SPACELAB, dbc.icons.FONT_AWESOME],
+    external_stylesheets=[dbc.themes.YETI, dbc.icons.FONT_AWESOME],
 )
 
 #  make dataframe from  spreadsheet:
@@ -107,10 +107,10 @@ Tables
 total_returns_table = dash_table.DataTable(
     id="total_returns",
     columns=[{"id": "Year", "name": "Year", "type": "text"}]
-    + [
-        {"id": col, "name": col, "type": "numeric", "format": {"specifier": "$,.0f"}}
-        for col in ["Cash", "Bonds", "Stocks", "Total"]
-    ],
+            + [
+                {"id": col, "name": col, "type": "numeric", "format": {"specifier": "$,.0f"}}
+                for col in ["Cash", "Bonds", "Stocks", "Total"]
+            ],
     page_size=15,
     style_table={"overflowX": "scroll"},
 )
@@ -118,11 +118,11 @@ total_returns_table = dash_table.DataTable(
 annual_returns_pct_table = dash_table.DataTable(
     id="annual_returns_pct",
     columns=(
-        [{"id": "Year", "name": "Year", "type": "text"}]
-        + [
-            {"id": col, "name": col, "type": "numeric", "format": {"specifier": ".1%"}}
-            for col in df.columns[1:]
-        ]
+            [{"id": "Year", "name": "Year", "type": "text"}]
+            + [
+                {"id": col, "name": col, "type": "numeric", "format": {"specifier": ".1%"}}
+                for col in df.columns[1:]
+            ]
     ),
     data=df.to_dict("records"),
     sort_action="native",
@@ -177,26 +177,36 @@ Figures
 """
 
 
-def make_pie(slider_input, title):
-    fig = go.Figure(
-        data=[
-            go.Pie(
-                labels=["Cash", "Bonds", "Stocks"],
-                values=slider_input,
-                textinfo="label+percent",
-                textposition="inside",
-                marker={"colors": [COLORS["cash"], COLORS["bonds"], COLORS["stocks"]]},
-                sort=False,
-                hoverinfo="none",
-            )
-        ]
+def make_bar_chart(slider_input, title):
+    """Create a bar chart for asset allocation instead of a pie chart"""
+    categories = ["Cash", "Bonds", "Stocks"]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=categories,
+            y=slider_input,
+            text=[f"{val}%" for val in slider_input],
+            textposition='auto',
+            marker_color=[COLORS["cash"], COLORS["bonds"], COLORS["stocks"]],
+            width=0.6,
+        )
     )
+
     fig.update_layout(
         title_text=title,
         title_x=0.5,
         margin=dict(b=25, t=75, l=35, r=25),
         height=325,
         paper_bgcolor=COLORS["background"],
+        yaxis=dict(
+            title="Percentage (%)",
+            range=[0, 100],
+            dtick=20
+        ),
+        xaxis=dict(
+            title="Asset Type"
+        )
     )
     return fig
 
@@ -302,7 +312,6 @@ slider_card = dbc.Card(
     className="mt-4",
 )
 
-
 time_period_data = [
     {
         "label": f"2007-2008: Great Financial Crisis to {MAX_YR}",
@@ -330,7 +339,6 @@ time_period_data = [
         "planning_time": MAX_YR - MIN_YR + 1,
     },
 ]
-
 
 time_period_card = dbc.Card(
     [
@@ -419,7 +427,6 @@ input_groups = html.Div(
     className="mt-4 p-4",
 )
 
-
 # =====  Results Tab components
 
 results_card = dbc.Card(
@@ -430,7 +437,6 @@ results_card = dbc.Card(
     className="mt-4",
 )
 
-
 data_source_card = dbc.Card(
     [
         dbc.CardHeader("Source Data: Annual Total Returns"),
@@ -438,7 +444,6 @@ data_source_card = dbc.Card(
     ],
     className="mt-4",
 )
-
 
 # ========= Learn Tab  Components
 learn_card = dbc.Card(
@@ -448,7 +453,6 @@ learn_card = dbc.Card(
     ],
     className="mt-4",
 )
-
 
 # ========= Build tabs
 tabs = dbc.Tabs(
@@ -466,7 +470,6 @@ tabs = dbc.Tabs(
     active_tab="tab-2",
     className="mt-2",
 )
-
 
 """
 ==========================================================================
@@ -510,11 +513,11 @@ def backtest(stocks, cash, start_bal, nper, start_yr):
 
             # calculate this period's  returns
             dff.loc[yr, "Cash"] = dff.loc[yr, "Cash"] * (
-                1 + dff.loc[yr, "3-mon T.Bill"]
+                    1 + dff.loc[yr, "3-mon T.Bill"]
             )
             dff.loc[yr, "Stocks"] = dff.loc[yr, "Stocks"] * (1 + dff.loc[yr, "S&P 500"])
             dff.loc[yr, "Bonds"] = dff.loc[yr, "Bonds"] * (
-                1 + dff.loc[yr, "10yr T.Bond"]
+                    1 + dff.loc[yr, "10yr T.Bond"]
             )
             dff.loc[yr, "Total"] = int(dff.loc[yr, ["Cash", "Bonds", "Stocks"]].sum())
 
@@ -574,13 +577,21 @@ app.layout = dbc.Container(
                     className="text-center bg-primary text-white p-2",
                 ),
             )
+        ),  # Added subheading with name and course information
+        dbc.Row(
+            dbc.Col(
+                html.H5(
+                    "Created by: Lauren Landa for CS-150",
+                    className="text-center p-1",
+                ),
+            )
         ),
         dbc.Row(
             [
                 dbc.Col(tabs, width=12, lg=5, className="mt-4 border"),
                 dbc.Col(
                     [
-                        dcc.Graph(id="allocation_pie_chart", className="mb-2"),
+                        dcc.Graph(id="allocation_bar_chart", className="mb-2"),
                         dcc.Graph(id="returns_chart", className="pb-4"),
                         html.Hr(),
                         html.Div(id="summary_table"),
@@ -598,7 +609,6 @@ app.layout = dbc.Container(
     fluid=True,
 )
 
-
 """
 ==========================================================================
 Callbacks
@@ -606,11 +616,11 @@ Callbacks
 
 
 @app.callback(
-    Output("allocation_pie_chart", "figure"),
+    Output("allocation_bar_chart", "figure"),
     Input("stock_bond", "value"),
     Input("cash", "value"),
 )
-def update_pie(stocks, cash):
+def update_bar_chart(stocks, cash):
     bonds = 100 - stocks - cash
     slider_input = [cash, bonds, stocks]
 
@@ -620,7 +630,7 @@ def update_pie(stocks, cash):
         investment_style = "Conservative"
     else:
         investment_style = "Moderate"
-    figure = make_pie(slider_input, investment_style + " Asset Allocation")
+    figure = make_bar_chart(slider_input, investment_style + " Asset Allocation")
     return figure
 
 
