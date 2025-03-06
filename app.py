@@ -311,7 +311,6 @@ slider_card = dbc.Card(
     body=True,
     className="mt-4",
 )
-
 time_period_data = [
     {
         "label": f"2007-2008: Great Financial Crisis to {MAX_YR}",
@@ -422,8 +421,17 @@ rate_of_return = dbc.InputGroup(
     className="mb-3",
 )
 
+# Add bonds display component
+bonds_display = dbc.InputGroup(
+    [
+        dbc.InputGroupText("Bonds Allocation:"),
+        dbc.Input(id="bonds-allocation", disabled=True, className="text-black"),
+    ],
+    className="mb-3",
+)
+
 input_groups = html.Div(
-    [start_amount, start_year, number_of_years, end_amount, rate_of_return],
+    [start_amount, start_year, number_of_years, end_amount, rate_of_return, bonds_display],
     className="mt-4 p-4",
 )
 
@@ -614,7 +622,14 @@ app.layout = dbc.Container(
 Callbacks
 """
 
-
+@app.callback(
+    Output("bonds-allocation", "value"),
+    Input("stock_bond", "value"),
+    Input("cash", "value"),
+)
+def update_bonds_display(stocks, cash):
+    bonds = 100 - stocks - cash
+    return f"{bonds}%"
 @app.callback(
     Output("allocation_bar_chart", "figure"),
     Input("stock_bond", "value"),
