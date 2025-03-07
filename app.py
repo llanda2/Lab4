@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-from dash import Dash, dcc, html, dash_table, Input, Output, State, callback_context
+from dash import Dash, dcc, html, dash_table, Input, Output, State, callback_context, dash
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 import pandas as pd
 from datetime import datetime
-
+import dash
+from dash.exceptions import PreventUpdate
 app = Dash(
     __name__,
     external_stylesheets=[dbc.themes.YETI, dbc.icons.FONT_AWESOME],
@@ -471,7 +472,19 @@ input_groups = html.Div(
     [start_amount, start_year, number_of_years, end_amount, rate_of_return, bonds_display],
     className="mt-4 p-4",
 )
+# Add Previous Setting button next to the input groups
+previous_setting_button = dbc.Button(
+    "Previous Setting",
+    id="previous-setting-button",
+    color="secondary",
+    className="mt-2 mb-3",
+    disabled=True
+)
 
+input_groups_with_button = html.Div(
+    [html.Div([input_groups, previous_setting_button])],
+    className="mt-4"
+)
 # =====  Results Tab components
 
 results_card = dbc.Card(
@@ -517,7 +530,7 @@ tabs = dbc.Tabs(
     [
         dbc.Tab(learn_card, tab_id="tab1", label="Learn"),
         dbc.Tab(
-            [asset_allocation_text, slider_card, input_groups, time_period_card],
+            [asset_allocation_text, slider_card, input_groups_with_button, time_period_card],
             tab_id="tab-2",
             label="Play",
             className="pb-4",
@@ -666,6 +679,8 @@ app.layout = dbc.Container(
         dbc.Row(dbc.Col(footer)),
         # Store for the history data
         dcc.Store(id='history-data', data=history_df.to_dict('records')),
+        # Store for tracking the current position in history
+        dcc.Store(id='history-position', data=0),
     ],
     fluid=True,
 )
@@ -824,21 +839,143 @@ def update_totals(stocks, cash, start_bal, planning_time, start_yr, history_data
 
     return data, fig, summary_table, ending_amount, ending_cagr, history_data
 
-
 @app.callback(
     Output('history_table', 'data'),
+    Output('history-position', 'data', allow_duplicate=True),
     Input('history-data', 'data'),
-    Input('clear-history', 'n_clicks')
+    Input('clear-history', 'n_clicks'),
+    State('history-position', 'data'),
+    prevent_initial_call=True
 )
-def update_history_table(history_data, clear_clicks):
+def update_history_table(history_data, clear_clicks, position):
     ctx = callback_context
     if ctx.triggered_id == 'clear-history' and clear_clicks:
         # Clear history if button was clicked
-        return []
+        return [], 0
 
     # Otherwise, update with current history data
-    return history_data
+    return history_data, dash.no_update
 
+@app.callback(
+    Output('previous-setting-button', 'disabled'),
+    Output('history-position', 'data'),
+    Output('cash', 'value', allow_duplicate=True),
+    Output('stock_bond', 'value', allow_duplicate=True),
+    Output('starting_amount', 'value', allow_duplicate=True),
+    Output('start_yr', 'value', allow_duplicate=True),
+    Output('planning_time', 'value', allow_duplicate=True),
+    Input('previous-setting-button', 'n_clicks'),
+    Input('history-data', 'data'),
+    State('history-position', 'data'),
+    prevent_initial_call=True
+)
+def recall_previous_setting(n_clicks, history_data, position):
+    ctx = callback_context
+    triggered_id = ctx.triggered_id if ctx.triggered else None
 
+    # Initialize default values
+    disabled = True
+    cash_value = dash.no_update
+    stock_bond_value = dash.no_update
+    starting_amount_value = dash.no_update
+    start_yr_value = dash.no_update
+    planning_time_value = dash.no_update
+
+    # Only process if we have history data
+    if history_data and len(history_data) > 0:
+        # Enable button if we have history
+        disabled = False
+
+        # If button was clicked, update position and values
+        if triggered_id == 'previous-setting-button' and n_clicks:
+            # Update position - move one step back in history
+            position = min(position + 1, len(history_data) - 1)
+
+            # If we're not out of history
+            if position < len(history_data):
+                entry = history_data[position]
+                cash_value = entry['Cash %']
+                stock_bond_value = entry['Stocks %']
+                starting_amount_value = entry['Starting Amount']
+                start_yr_value = entry['Start Year']
+                planning_time_value = entry['Duration (Years)']
+
+            # If we've reached the end of history, disable the button
+            if position >= len(history_data) - 1:
+                disabled = True
+
+        # When history is cleared, reset position
+        elif triggered_id == 'history-data' and len(history_data) == 0:
+            position = 0
+            disabled = True
+
+    @app.callback(
+        Output('previous-setting-button', 'disabled'),
+        Output('history-position', 'data'),
+        Output('cash', 'value', allow_duplicate=True),
+        Output('stock_bond', 'value', allow_duplicate=True),
+        Output('starting_amount', 'value', allow_duplicate=True),
+        Output('start_yr', 'value', allow_duplicate=True),
+        Output('planning_time', 'value', allow_duplicate=True),
+        Output('history_table', 'data'),
+        Input('previous-setting-button', 'n_clicks'),
+        Input('clear-history', 'n_clicks'),
+        Input('history-data', 'data'),
+        State('history-position', 'data'),
+        prevent_initial_call=True
+    )
+    def manage_history(prev_n_clicks, clear_n_clicks, history_data, position):
+        ctx = callback_context
+        triggered_id = ctx.triggered_id if ctx.triggered else None
+
+        # Initialize default values
+        disabled = True
+        cash_value = dash.no_update
+        stock_bond_value = dash.no_update
+        starting_amount_value = dash.no_update
+        start_yr_value = dash.no_update
+        planning_time_value = dash.no_update
+        history_table_data = history_data
+
+        # If we have history, enable the button
+        if history_data and len(history_data) > 0:
+            disabled = False
+
+        # Handle the Previous Setting button
+        if triggered_id == 'previous-setting-button' and prev_n_clicks:
+            if history_data and position < len(history_data):
+                # Move one step back in history
+                position = min(position + 1, len(history_data) - 1)
+
+                # Apply the historical settings
+                entry = history_data[position]
+                cash_value = entry['Cash %']
+                stock_bond_value = entry['Stocks %']
+                starting_amount_value = entry['Starting Amount']
+                start_yr_value = entry['Start Year']
+                planning_time_value = entry['Duration (Years)']
+
+                # If we've reached the end of history, disable the button
+                if position >= len(history_data) - 1:
+                    disabled = True
+
+        # Handle the Clear History button
+        elif triggered_id == 'clear-history' and clear_n_clicks:
+            history_table_data = []
+            position = 0
+            disabled = True
+
+        # When new history is added, reset position and enable button
+        elif triggered_id == 'history-data':
+            # Only reset position when new history is added (not when history is cleared)
+            if history_data and len(history_data) > 0:
+                position = 0
+                disabled = False
+            else:
+                position = 0
+                disabled = True
+
+        return disabled, position, cash_value, stock_bond_value, starting_amount_value, start_yr_value, planning_time_value, history_table_data
+    return disabled, position, cash_value, stock_bond_value, starting_amount_value, start_yr_value, planning_time_value
 if __name__ == "__main__":
     app.run(debug=True)
