@@ -3,6 +3,7 @@ from dash import Dash, dcc, html, dash_table, Input, Output, State, callback_con
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 import pandas as pd
+from datetime import datetime
 
 app = Dash(
     __name__,
@@ -22,6 +23,13 @@ df = (
     .sort_values("Year", ignore_index=True)
     .fillna(0)
 )
+
+# Create history DataFrame to store previous analyses
+history_df = pd.DataFrame(columns=[
+    'Date', 'Cash %', 'Bonds %', 'Stocks %',
+    'Starting Amount', 'Start Year', 'Duration (Years)',
+    'Ending Amount', 'CAGR'
+])
 
 COLORS = {
     "cash": "#3cb521",
@@ -87,6 +95,15 @@ cagr_text = dcc.Markdown(
     """
 )
 
+history_text = dcc.Markdown(
+    """
+    This tab records a history of your previous analyses. Each time you make changes to your asset allocation, 
+    starting amount, or time period, the parameters and results are saved here.
+
+    You can use this history to compare different allocation strategies and see how they impact your returns.
+    """
+)
+
 footer = html.Div(
     dcc.Markdown(
         """
@@ -125,6 +142,26 @@ annual_returns_pct_table = dash_table.DataTable(
             ]
     ),
     data=df.to_dict("records"),
+    sort_action="native",
+    page_size=15,
+    style_table={"overflowX": "scroll"},
+)
+
+# Create history table
+history_table = dash_table.DataTable(
+    id="history_table",
+    columns=[
+        {"id": "Date", "name": "Date", "type": "text"},
+        {"id": "Cash %", "name": "Cash %", "type": "numeric", "format": {"specifier": ".0f"}},
+        {"id": "Bonds %", "name": "Bonds %", "type": "numeric", "format": {"specifier": ".0f"}},
+        {"id": "Stocks %", "name": "Stocks %", "type": "numeric", "format": {"specifier": ".0f"}},
+        {"id": "Starting Amount", "name": "Starting Amount", "type": "numeric", "format": {"specifier": "$,.0f"}},
+        {"id": "Start Year", "name": "Start Year", "type": "numeric"},
+        {"id": "Duration (Years)", "name": "Duration (Years)", "type": "numeric"},
+        {"id": "Ending Amount", "name": "Ending Amount", "type": "numeric", "format": {"specifier": "$,.0f"}},
+        {"id": "CAGR", "name": "CAGR", "type": "text"},
+    ],
+    data=history_df.to_dict("records"),
     sort_action="native",
     page_size=15,
     style_table={"overflowX": "scroll"},
@@ -453,11 +490,24 @@ data_source_card = dbc.Card(
     className="mt-4",
 )
 
-# ========= Learn Tab  Components
+# ========= Learn Tab Components
 learn_card = dbc.Card(
     [
         dbc.CardHeader("An Introduction to Asset Allocation"),
         dbc.CardBody(learn_text),
+    ],
+    className="mt-4",
+)
+
+# ========= History Tab Components
+history_card = dbc.Card(
+    [
+        dbc.CardHeader("Analysis History"),
+        dbc.CardBody([
+            history_text,
+            html.Div(history_table),
+            dbc.Button("Clear History", id="clear-history", color="primary", className="mt-3"),
+        ]),
     ],
     className="mt-4",
 )
@@ -473,6 +523,7 @@ tabs = dbc.Tabs(
             className="pb-4",
         ),
         dbc.Tab([results_card, data_source_card], tab_id="tab-3", label="Results"),
+        dbc.Tab(history_card, tab_id="tab-4", label="History"),
     ],
     id="tabs",
     active_tab="tab-2",
@@ -613,6 +664,8 @@ app.layout = dbc.Container(
             className="ms-1",
         ),
         dbc.Row(dbc.Col(footer)),
+        # Store for the history data
+        dcc.Store(id='history-data', data=history_df.to_dict('records')),
     ],
     fluid=True,
 )
@@ -622,6 +675,7 @@ app.layout = dbc.Container(
 Callbacks
 """
 
+
 @app.callback(
     Output("bonds-allocation", "value"),
     Input("stock_bond", "value"),
@@ -630,6 +684,8 @@ Callbacks
 def update_bonds_display(stocks, cash):
     bonds = 100 - stocks - cash
     return f"{bonds}%"
+
+
 @app.callback(
     Output("allocation_bar_chart", "figure"),
     Input("stock_bond", "value"),
@@ -699,13 +755,15 @@ def update_time_period(planning_time, start_yr, period_number):
     Output("summary_table", "children"),
     Output("ending_amount", "value"),
     Output("cagr", "value"),
+    Output('history-data', 'data'),
     Input("stock_bond", "value"),
     Input("cash", "value"),
     Input("starting_amount", "value"),
     Input("planning_time", "value"),
     Input("start_yr", "value"),
+    State('history-data', 'data')
 )
-def update_totals(stocks, cash, start_bal, planning_time, start_yr):
+def update_totals(stocks, cash, start_bal, planning_time, start_yr, history_data):
     # set defaults for invalid inputs
     start_bal = 10 if start_bal is None else start_bal
     planning_time = 1 if planning_time is None else planning_time
@@ -730,11 +788,56 @@ def update_totals(stocks, cash, start_bal, planning_time, start_yr):
 
     # format ending balance
     ending_amount = f"${dff['Total'].iloc[-1]:0,.0f}"
+    ending_amount_numeric = dff['Total'].iloc[-1]
 
-    # calcluate cagr
+    # calculate cagr
     ending_cagr = cagr(dff["Total"])
 
-    return data, fig, summary_table, ending_amount, ending_cagr
+    # Only add to history if triggered by user action
+    ctx = callback_context
+    if ctx.triggered:
+        # Load existing history data
+        history_df = pd.DataFrame(history_data)
+
+        # Add new record to history
+        bonds = 100 - stocks - cash
+        new_record = pd.DataFrame([{
+            'Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'Cash %': cash,
+            'Bonds %': bonds,
+            'Stocks %': stocks,
+            'Starting Amount': start_bal,
+            'Start Year': start_yr,
+            'Duration (Years)': planning_time,
+            'Ending Amount': ending_amount_numeric,
+            'CAGR': ending_cagr
+        }])
+
+        # Concatenate with existing history
+        if not history_df.empty:
+            history_df = pd.concat([history_df, new_record], ignore_index=True)
+        else:
+            history_df = new_record
+
+        # Update history data
+        history_data = history_df.to_dict('records')
+
+    return data, fig, summary_table, ending_amount, ending_cagr, history_data
+
+
+@app.callback(
+    Output('history_table', 'data'),
+    Input('history-data', 'data'),
+    Input('clear-history', 'n_clicks')
+)
+def update_history_table(history_data, clear_clicks):
+    ctx = callback_context
+    if ctx.triggered_id == 'clear-history' and clear_clicks:
+        # Clear history if button was clicked
+        return []
+
+    # Otherwise, update with current history data
+    return history_data
 
 
 if __name__ == "__main__":
